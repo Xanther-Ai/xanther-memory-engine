@@ -1,0 +1,5 @@
+# XME Worker dependencies
+psycopg2-binary>=2.9.9
+neo4j>=5.14.0
+httpx>=0.25.0
+python-dotenv>=1.0.0
