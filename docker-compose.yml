@@ -1,0 +1,120 @@
+version: "3.9"
+
+services:
+  # --- PostgreSQL 16 with TimescaleDB ---
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: xme-postgres
+    environment:
+      POSTGRES_DB: xce_memory
+      POSTGRES_USER: xce_memory
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-xme_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - xme_pgdata:/var/lib/postgresql/data
+      - ./db/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xce_memory -d xce_memory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - xme-net
+
+  # --- Neo4j 5 ---
+  neo4j:
+    image: neo4j:5
+    container_name: xme-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-xme_dev_password}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_max__size: 512m
+      NEO4J_dbms_memory_pagecache_size: 256m
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - xme_neo4j_data:/data
+      - xme_neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - xme-net
+
+  # --- XME Worker ---
+  worker:
+    build:
+      context: ./services/worker
+      dockerfile: Dockerfile
+    container_name: xme-worker
+    environment:
+      PG_HOST: xme-postgres
+      PG_PORT: "5432"
+      PG_DB: xce_memory
+      PG_USER: xce_memory
+      PG_PASSWORD: ${PG_PASSWORD:-xme_dev_password}
+      NEO4J_URI: bolt://xme-neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-xme_dev_password}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-anthropic/claude-sonnet-4-20250514}
+      BATCH_SIZE: "20"
+      EXTRACTION_INTERVAL: "300"
+      MAX_MEMORY_NODES: "500"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - xme-net
+
+  # --- XME MCP Server ---
+  mcp-server:
+    build:
+      context: ./services/mcp_server
+      dockerfile: Dockerfile
+    container_name: xme-mcp-server
+    environment:
+      PG_HOST: xme-postgres
+      PG_PORT: "5432"
+      PG_DB: xce_memory
+      PG_USER: xce_memory
+      PG_PASSWORD: ${PG_PASSWORD:-xme_dev_password}
+      NEO4J_URI: bolt://xme-neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-xme_dev_password}
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8100"
+    ports:
+      - "8100:8100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - xme-net
+
+volumes:
+  xme_pgdata:
+  xme_neo4j_data:
+  xme_neo4j_logs:
+
+networks:
+  xme-net:
+    driver: bridge

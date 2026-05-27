@@ -1,0 +1,41 @@
+{
+  "name": "xanther-memory-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Xanther Memory Engine (XME) MCP Server",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "xanther",
+    "memory",
+    "mcp",
+    "sdk",
+    "ai",
+    "context"
+  ],
+  "author": "Xanther",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
