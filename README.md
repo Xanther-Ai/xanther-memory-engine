@@ -2,148 +2,273 @@
 
 # Xanther Memory Engine (XME)
 
-**The AI coding assistant memory layer that actually works.**
+**Persistent memory for AI coding assistants.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
-[![Tests](https://github.com/Xanther-Ai/xanther-context-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Xanther-Ai/xanther-context-engine/actions)
+[![PyPI](https://img.shields.io/pypi/v/xanther-memory-engine)](https://pypi.org/project/xanther-memory-engine)
 
 </div>
 
 ---
 
-> Your AI assistant re-reads your entire codebase every session. It forgets every decision you've made. It repeats the same failed approaches. Xanther fixes this.
+> Your AI assistant forgets every decision you've made. It repeats the same failed approaches. It re-explains your stack every session. XME fixes this.
 
-XME gives AI coding assistants **persistent memory** across sessions — decisions remembered, failures not repeated, context always current. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
+XME gives AI coding assistants **persistent memory** across sessions. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
 
 ```bash
 pip install xanther-memory-engine
-xme hook install .          # 30 seconds to set up
-xme start my-project        # memory starts now
+xme hook install .      # 30 seconds — auto-captures every session
+xme start my-project    # memory starts now
 ```
 
 ---
 
-## What Xanther does
+## Architecture
 
-Graphify maps what your code *is*. Xanther remembers what your team *did*.
+```mermaid
+graph TB
+    subgraph "AI Agent (Claude Code / Kiro / Cursor)"
+        AGENT[Agent]
+        HOOKS[IDE Hooks<br/>agentStop · promptSubmit]
+    end
 
-Every session, Xanther captures what was discussed, extracts decisions and lessons learned, and makes them available at the start of the next session — without you having to re-explain anything.
+    subgraph "XME Memory Engine"
+        ENGINE[MemoryEngine<br/>xme/engine.py]
 
+        subgraph "Layer 1 — Episodic"
+            EP[EpisodicStore<br/>Verbatim session transcripts]
+        end
+
+        subgraph "Layer 2 — Facts"
+            FG[FactGraphStore<br/>Decisions · Attempts<br/>Preferences · Conventions]
+            EXT[FactExtractor<br/>LLM or regex]
+            EMB[LocalEmbedder<br/>all-MiniLM-L6-v2]
+            EXT --> FG
+            EMB --> FG
+        end
+
+        subgraph "Layer 3 — Context"
+            CTX[ContextStore<br/>Working state per project+user<br/>UPSERT semantics]
+        end
+
+        ENGINE --> EP & FG & CTX
+    end
+
+    subgraph "Storage"
+        OS[(OpenSearch<br/>port 9200<br/>Full-text + k-NN)]
+        NEO4J[(Neo4j<br/>port 7687<br/>Fact graph + vectors)]
+        SQLITE[(SQLite<br/>.xanther/xme.db<br/>Context + fallback)]
+    end
+
+    subgraph "Outputs"
+        MCP[MCP Server<br/>11 tools]
+        DASH[Dashboard<br/>port 8001]
+        EXP[Exports<br/>Obsidian · Wiki · Graphify]
+    end
+
+    HOOKS -- buffer files --> ENGINE
+    AGENT -- MCP tool calls --> MCP
+    EP --> OS & SQLITE
+    FG --> NEO4J & SQLITE
+    CTX --> SQLITE
+    ENGINE --> DASH & EXP
+    ENGINE --> MCP
 ```
-Session 1:  "We decided to use FastAPI. Redis lock failed — timeout under load."
-Session 2:  Agent already knows. Doesn't suggest Redis. Doesn't re-explain FastAPI.
-Session 10: Full institutional memory. New team members onboard in minutes.
+
+---
+
+## Local Infrastructure
+
+```mermaid
+graph LR
+    subgraph "Your Machine"
+        subgraph "Docker Compose"
+            NEO4J[(Neo4j:7687<br/>Fact knowledge graph)]
+            OS[(OpenSearch:9200<br/>Episodic search)]
+        end
+
+        subgraph "XME Process"
+            CLI[xme CLI]
+            DASH[xme dashboard<br/>:8001]
+            MCP_SRV[MCP Server]
+        end
+
+        subgraph "Hook Files"
+            BUF[.xanther/turns/<br/>Buffer files<br/>written per turn]
+            DB[.xanther/xme.db<br/>SQLite warm store]
+        end
+
+        subgraph "IDE"
+            KIRO[Kiro / Claude Code]
+            MCP_CFG[mcp.json]
+        end
+    end
+
+    subgraph "External APIs (optional)"
+        OR[OpenRouter API<br/>LLM fact extraction]
+    end
+
+    KIRO -- agentStop hook --> BUF
+    KIRO -- promptSubmit hook --> BUF
+    CLI -- drain buffer --> DB
+    CLI -- index to --> NEO4J & OS
+    MCP_CFG -- spawn --> MCP_SRV
+    MCP_SRV -- read --> NEO4J & OS & DB
+    KIRO -- MCP tool calls --> MCP_SRV
+    CLI -. LLM extraction .-> OR
+    DASH -- read --> NEO4J & OS & DB
+```
+
+---
+
+## Session lifecycle
+
+```mermaid
+sequenceDiagram
+    participant IDE as Kiro / Claude Code
+    participant HOOK as Hook Handler<br/>.xanther/hook.py
+    participant BUF as Buffer<br/>.xanther/turns/
+    participant XME as XME Engine
+    participant DB as Neo4j + SQLite
+
+    IDE->>HOOK: promptSubmit (user message)
+    HOOK->>BUF: write turn JSON (< 5ms)
+
+    IDE->>HOOK: promptSubmit (next message)
+    HOOK->>BUF: write turn JSON
+
+    Note over IDE,DB: ... more turns ...
+
+    IDE->>HOOK: agentStop (response finished)
+    HOOK->>BUF: write session_end marker
+
+    Note over BUF,DB: On next xme start or xme_session_end MCP call
+
+    XME->>BUF: drain all buffer files
+    XME->>XME: extract facts (LLM or regex)
+    XME->>DB: upsert facts with vector dedup
+    XME->>DB: save episode to OpenSearch
+    XME->>DB: update working context (UPSERT)
+
+    Note over IDE,DB: Next session
+
+    IDE->>XME: xme_session_start
+    XME->>DB: load working context
+    XME->>DB: load recent facts
+    XME->>DB: load last episode summary
+    XME-->>IDE: primed context block (inject into prompt)
 ```
 
 ---
 
 ## Three memory layers
 
+```mermaid
+flowchart LR
+    subgraph "Layer 1 — Episodic"
+        direction TB
+        E1[Full session transcripts<br/>verbatim]
+        E2[Searchable by:<br/>full-text · semantic · date · user]
+        E3[Backend: OpenSearch<br/>Fallback: SQLite FTS5]
+        E1 --> E2 --> E3
+    end
+
+    subgraph "Layer 2 — Facts"
+        direction TB
+        F1[Extracted knowledge nodes]
+        F2[Types:<br/>Decision · Attempt<br/>Preference · Convention · Entity]
+        F3[UPSERT dedup<br/>cosine similarity > 0.85]
+        F4[Backend: Neo4j graph<br/>+ vector index]
+        F1 --> F2 --> F3 --> F4
+    end
+
+    subgraph "Layer 3 — Context"
+        direction TB
+        C1[Live working state<br/>per project + user]
+        C2[Fields:<br/>current_task · next_steps<br/>recent_decisions · blockers]
+        C3[UPSERT only — always current<br/>Backend: SQLite]
+        C1 --> C2 --> C3
+    end
+
+    EP[Episodic\nStore] --> L1(Layer 1)
+    FG[Fact\nGraph] --> L2(Layer 2)
+    CTX[Context\nStore] --> L3(Layer 3)
+
+    style L1 fill:#dbeafe
+    style L2 fill:#dcfce7
+    style L3 fill:#fef9c3
 ```
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
-│  EPISODIC        │   │  FACTS (Graph)    │   │  WORKING CONTEXT      │
-│                  │   │                   │   │                       │
-│  Full session    │   │  Decisions        │   │  Current task         │
-│  transcripts     │   │  Attempts         │   │  Recent decisions     │
-│  verbatim        │   │  Preferences      │   │  Next steps           │
-│                  │   │  Conventions      │   │  Open questions       │
-│  OpenSearch      │   │  Entities         │   │                       │
-│  + SQLite FTS5   │   │  Neo4j            │   │  SQLite UPSERT        │
-│  (fallback)      │   │  + vector dedup   │   │  per (project, user)  │
-└─────────────────┘   └──────────────────┘   └──────────────────────┘
-```
-
-**Episodic** — raw session transcripts, full-text searchable. "What did we try last Tuesday?"
-
-**Facts** — structured knowledge extracted from sessions. Decisions, failed approaches, preferences, conventions. Vector-deduplicated so the same fact never gets stored twice. Graph-linked so related facts surface together.
-
-**Working Context** — the current state of a `(project, user)` pair. Always up-to-date via UPSERT. Injected into agent context at session start.
 
 ---
 
 ## Quickstart
 
-**Install:**
 ```bash
 pip install xanther-memory-engine
-```
-
-**Install hooks** (Kiro + Claude Code):
-```bash
 xme hook install .
-```
-
-That's it. XME now auto-captures every session. No other setup needed.
-
-**Start a session manually:**
-```bash
 xme start my-project
 ```
 
-**Search your memory:**
+**With full infrastructure** (Neo4j + OpenSearch):
 ```bash
-xme search my-project "why did we choose FastAPI"
-xme facts my-project --type decision
+cp .env.example .env        # set NEO4J_PASSWORD
+docker-compose up -d
+xme start my-project
 ```
 
-**Launch the dashboard:**
+**Zero infrastructure** (SQLite only, no Docker):
 ```bash
-xme dashboard
-# Open http://localhost:8001
+XME_FALLBACK_MODE=true xme start my-project
 ```
 
 ---
 
-## How it works
+## What gets captured automatically
 
-**During a session**, two hooks fire silently:
-- `promptSubmit` — buffers your message to `.xanther/turns/`
-- `agentStop` — drains the buffer: extracts facts, updates context, saves episode
+After `xme hook install .`:
 
-**At the start of the next session**, the agent gets a context block like:
+- Every prompt is buffered to `.xanther/turns/` (< 5ms, no blocking)
+- On `agentStop`: buffer drains → facts extracted → context updated
+- Next session: agent gets a primed context block injected automatically
 
-```markdown
+```
 **Current task**: Refactor auth module
-**Last session**: Moved JWT logic to dedicated auth service — success
+**Last session**: Moved JWT to dedicated auth service — success
 **Recent decisions**:
-- [VALIDATED] Use FastAPI for auth service — async support required
-- [VALIDATED] PostgreSQL for main DB — ACID compliance
+  - [VALIDATED] Use FastAPI — async support required
+  - [VALIDATED] PostgreSQL — ACID compliance
 **Known failed approaches**:
-- Redis distributed lock — timeout under load >1000 req/s
+  - Redis distributed lock — timeout under high load
 **Next steps**: Deploy auth service to staging
 ```
 
-The agent starts informed. No re-explaining. No repeated mistakes.
-
 ---
 
-## MCP tools
+## MCP tools (11)
 
-Xanther exposes 11 memory tools via MCP, working alongside 5 code intelligence tools:
-
-| Tool | What it does |
+| Tool | Description |
 |------|-------------|
-| `xme_session_start` | Start session, get primed context for prompt injection |
+| `xme_session_start` | Start session, get primed context block |
 | `xme_session_end` | End session: persist episode, extract facts, update context |
-| `xme_add` | Add content to memory — Mem0-style UPSERT with deduplication |
+| `xme_add` | Add content — Mem0-style UPSERT with deduplication |
 | `xme_search` | Search across all 3 layers simultaneously |
-| `xme_get_context` | Get current working context for a project+user |
-| `xme_facts` | Query the fact graph — decisions, attempts, preferences |
-| `xme_episodes` | Search past sessions |
+| `xme_get_context` | Get working context for prompt injection |
+| `xme_facts` | Query fact graph (filter by type, user, keyword) |
+| `xme_episodes` | Full-text + semantic search over past sessions |
 | `xme_remember` | Explicitly store a typed fact |
 | `xme_forget` | Soft-delete a memory node |
-| `xme_export` | Export to Obsidian vault, wiki, or Graphify-compatible JSON |
+| `xme_export` | Export to Obsidian vault / wiki / Graphify JSON |
 | `xme_context_update` | Partial UPSERT of working context fields |
 
-Add to your MCP config:
+Add to MCP config:
 ```json
 {
   "mcpServers": {
-    "xanther": {
-      "command": "xce-mcp-server",
+    "xme": {
+      "command": "xme",
+      "args": ["serve"],
       "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
         "NEO4J_PASSWORD": "your-password"
       }
     }
@@ -155,182 +280,82 @@ Add to your MCP config:
 
 ## Deduplication
 
-Facts are stored once, not repeated. When you add new content, Xanther:
+Facts are stored once, not repeated across sessions:
 
-1. Embeds it using `all-MiniLM-L6-v2` (local, no API key)
-2. Searches for similar existing facts (cosine similarity)
-3. If similarity > 0.85: **merges** the new info into the existing fact
-4. If no match: creates a new fact node
-
-```
-Session 3: "we use FastAPI"        → merges with existing FastAPI decision (sim=0.93)
-Session 7: "decided on FastAPI"    → merges again (sim=0.91)
-Session 15: "PostgreSQL migration" → new fact (sim=0.12 vs FastAPI)
-```
-
-Your fact graph stays clean even across dozens of sessions.
-
----
-
-## Multi-user, multi-project
-
-Every memory operation is scoped to `(project_id, user_id)`:
-
-- **Team scope** — decisions, attempts, conventions are shared across users in a project
-- **Personal scope** — sessions, preferences are per-user
-
-```bash
-xme search payments-api "auth decisions"          # search team memory
-xme facts payments-api --type decision            # list team decisions
-xme facts payments-api --type preference --user raj  # personal preferences
-```
-
----
-
-## Export formats
-
-**Obsidian vault:**
-```bash
-xme export my-project --format obsidian
-# → .xanther/obsidian/  (open as Obsidian vault)
-```
-
-**Agent-navigable wiki:**
-```bash
-xme export my-project --format wiki
-# → .xanther/wiki/index.md + article per concept
-```
-
-**Graphify-compatible:**
-```bash
-xme export my-project --format graphify
-# → .xanther/graphify-out/graph.json + GRAPH_REPORT.md
-```
-
----
-
-## Storage backends
-
-| Backend | What it stores | Required? |
-|---------|---------------|-----------|
-| SQLite | Context layer + fact fallback + episodic fallback | Always (built-in) |
-| Neo4j | Fact graph with vector search | Recommended |
-| OpenSearch | Episodic full-text + semantic search | Optional |
-
-**Zero-infrastructure mode** (SQLite only):
-```bash
-XME_FALLBACK_MODE=true xme start my-project
-```
-
-**Full mode** (Neo4j + OpenSearch via Docker):
-```bash
-docker-compose up -d
-xme start my-project
+```mermaid
+flowchart TD
+    A[New content added] --> B[Embed with\nall-MiniLM-L6-v2]
+    B --> C{Similar fact exists?\ncosine > 0.85}
+    C -- Yes --> D[Merge into existing fact\nupdate content + metadata]
+    C -- No --> E[Create new fact node]
+    D --> F[Update Neo4j + SQLite]
+    E --> F
 ```
 
 ---
 
 ## Comparison
 
-| Feature | Graphify | Mem0 | Zep | **Xanther XME** |
-|---------|----------|------|-----|-----------------|
-| Code knowledge graph | ✅ | ❌ | ❌ | ✅ (via XCE) |
-| Session memory | ❌ | ✅ | ✅ | ✅ |
-| Fact graph | ❌ | partial | ✅ | ✅ |
+| | Mem0 | Zep | MemPalace | **XME** |
+|--|------|-----|-----------|---------|
+| Episodic memory | ✅ | ✅ | ✅ | ✅ |
+| Fact graph | partial | ✅ | ❌ | ✅ |
 | Working context UPSERT | ❌ | ❌ | ❌ | ✅ |
-| Multi-user scoping | ❌ | ✅ | ✅ | ✅ |
-| Deduplication | ❌ | ✅ | ✅ | ✅ |
-| Local-first / self-hosted | ✅ | ❌ | ❌ | ✅ |
-| No pre-indexing required | ✅ | ✅ | ✅ | ✅ |
-| Obsidian export | ✅ | ❌ | ❌ | ✅ |
-| Dashboard UI | graph.html | ❌ | ✅ | ✅ |
-| MCP tools | 1 | ❌ | ❌ | 11 |
-| Open source | ✅ | partial | ❌ | ✅ |
+| Multi-user scoping | ✅ | ✅ | ❌ | ✅ |
+| Deduplication | ✅ | ✅ | ❌ | ✅ |
+| Local-first / open source | ❌ | ❌ | ✅ | ✅ |
+| MCP tools | ❌ | ❌ | ❌ | ✅ (11) |
+| Obsidian export | ❌ | ❌ | ❌ | ✅ |
+| Dashboard UI | ❌ | ✅ | ❌ | ✅ |
+| Code graph integration | ❌ | ❌ | ❌ | ✅ via XCE |
 
 ---
 
-## Architecture
+## CLI
 
+```bash
+xme start <project>              # init + show stats
+xme add <project> <user> <text>  # add content to memory
+xme search <project> <query>     # search all layers
+xme facts <project>              # list facts
+xme stats <project>              # memory health metrics
+xme export <project>             # export (obsidian/wiki/graphify)
+xme dashboard                    # launch web UI (port 8001)
+xme hook install [path]          # install Kiro + Claude Code hooks
+xme hook uninstall [path]        # remove hooks
 ```
-xme/
-├── engine.py          # MemoryEngine — single entry point
-├── models.py          # Episode, Fact, WorkingContext, Turn
-├── config.py          # XMESettings (env-based)
-├── layers/
-│   ├── episodic.py    # OpenSearch + SQLite FTS5 fallback
-│   ├── facts.py       # Neo4j + vector dedup + SQLite fallback
-│   └── context.py     # SQLite UPSERT per (project, user)
-├── extraction/
-│   ├── embedder.py    # all-MiniLM-L6-v2 (local, no API key)
-│   └── extractor.py   # LLM or regex fact extraction
-├── server/
-│   ├── mcp_tools.py   # 11 MCP tools
-│   └── dashboard.py   # FastAPI dashboard (port 8001)
-├── export/
-│   ├── obsidian.py
-│   ├── wiki.py
-│   └── graphify_compat.py
-└── hooks/
-    ├── installer.py   # xme hook install
-    └── handler.py     # hook entrypoint (zero imports, <20ms)
-```
-
-XCE (Xanther Context Engine) — code graph intelligence — lives alongside XME in the same package. When XCE has indexed your codebase, facts automatically link to the relevant AST nodes, enabling queries like "which decisions affected the auth module?" XME works without XCE.
 
 ---
 
 ## Configuration
 
-All configuration via environment variables:
-
 ```bash
-# Storage
-XME_SQLITE_PATH=.xanther/xme.db       # default
-XME_OPENSEARCH_URL=http://localhost:9200
-XME_FALLBACK_MODE=false                # true = SQLite only
-
-# Embedding
-XME_EMBEDDING_MODEL=all-MiniLM-L6-v2  # local model
-XME_DEDUP_THRESHOLD=0.85               # similarity threshold for merging facts
-
-# LLM extraction (optional — better fact quality)
-OPENROUTER_API_KEY=sk-...
+# LLM for better fact extraction (optional — regex works without it)
+OPENROUTER_API_KEY=sk-or-...
 XME_LLM_MODEL=openai/gpt-4o-mini
 
-# Neo4j (shared with XCE)
+# Neo4j — fact graph (recommended, free tier at console.neo4j.io)
 NEO4J_URI=bolt://localhost:7687
 NEO4J_PASSWORD=your-password
+
+# OpenSearch — episodic search (optional, falls back to SQLite FTS5)
+XME_OPENSEARCH_URL=http://localhost:9200
+
+# Zero-infrastructure mode
+XME_FALLBACK_MODE=false   # set true for SQLite-only, no Docker needed
 ```
+
+See [`.env.example`](.env.example) for the complete reference.
 
 ---
 
-## CLI reference
+## Related
+
+[Xanther Context Engine (XCE)](https://github.com/Xanther-Ai/xanther-context-engine) — code graph intelligence. When installed alongside XME, decisions link directly to the code they affect.
 
 ```bash
-xme start <project_id>               # init + show stats
-xme add <project_id> <user> <text>   # add content to memory
-xme search <project_id> <query>      # search all layers
-xme facts <project_id>               # list facts
-xme stats <project_id>               # memory health
-xme export <project_id>              # export (obsidian/wiki/graphify)
-xme dashboard                        # launch web UI (port 8001)
-xme hook install [path]              # install Kiro + Claude Code hooks
-xme hook uninstall [path]            # remove hooks
+pip install "xanther-context-engine[memory]"  # XCE + XME together
 ```
-
----
-
-## Contributing
-
-Xanther is open source under the Apache 2.0 license. Contributions welcome.
-
-The most useful contributions:
-- **Real-world sessions** — run XME on your project, share what facts got extracted (and what got missed)
-- **Extraction improvements** — better regex patterns or LLM prompts for fact extraction
-- **New exporters** — Notion, Linear, Confluence
-- **Language support** — more tree-sitter parsers for XCE
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
 
 ---
 
