@@ -164,19 +164,12 @@ class EpisodicStore:
         CREATE INDEX IF NOT EXISTS ep_date_idx    ON xme_episodes(started_at);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS xme_episodes_fts
-        USING fts5(
-            episode_id UNINDEXED,
-            project_id UNINDEXED,
-            transcript,
-            summary,
-            content='xme_episodes',
-            content_rowid='rowid'
-        );
+        USING fts5(episode_id UNINDEXED, project_id UNINDEXED, transcript, summary);
 
         CREATE TRIGGER IF NOT EXISTS ep_fts_insert
         AFTER INSERT ON xme_episodes BEGIN
-            INSERT INTO xme_episodes_fts(rowid, episode_id, project_id, transcript, summary)
-            VALUES (new.rowid, new.episode_id, new.project_id,
+            INSERT INTO xme_episodes_fts(episode_id, project_id, transcript, summary)
+            VALUES (new.episode_id, new.project_id,
                     json_extract(new.data, '$.full_transcript'), new.summary);
         END;
         """)
@@ -221,21 +214,18 @@ class EpisodicStore:
         assert self._conn is not None
         try:
             q = """
-            SELECT e.episode_id, e.summary, e.data,
+            SELECT f.episode_id, f.summary, e.data,
                    snippet(xme_episodes_fts, 2, '<b>', '</b>', '...', 20) AS hl
-            FROM xme_episodes_fts
-            JOIN xme_episodes e ON xme_episodes_fts.rowid = e.rowid
+            FROM xme_episodes_fts f
+            JOIN xme_episodes e ON f.episode_id = e.episode_id
             WHERE xme_episodes_fts MATCH ?
-              AND xme_episodes_fts.project_id = ?
+              AND f.project_id = ?
             """
             params: list[Any] = [_fts_query(query), project_id]
-            if user_id:
-                q += " AND e.user_id = ?"
-                params.append(user_id)
             q += f" LIMIT {limit}"
             rows = self._conn.execute(q, params).fetchall()
-        except sqlite3.OperationalError:
-            # FTS not populated yet — fall back to LIKE
+        except sqlite3.OperationalError as fts_err:
+            # FTS not populated yet — fall back to LIKE on data column
             rows = []
 
         results = []
@@ -398,9 +388,32 @@ class EpisodicStore:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Common English stopwords to skip in FTS queries
+_STOPWORDS = frozenset({
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
+    'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'after',
+    'i', 'my', 'me', 'you', 'your', 'we', 'our', 'it', 'its',
+    'what', 'which', 'who', 'when', 'where', 'why', 'how',
+    'did', 'does', 'do', 'and', 'or', 'but', 'if', 'so',
+})
+
 def _fts_query(text: str) -> str:
-    """Convert plain text to SQLite FTS5 query (quote individual terms)."""
-    terms = [t for t in text.split() if t]
+    import re as _re
+    words = _re.findall(r"[a-zA-Z0-9]+", text.lower())
+    stopwords = {
+        'a','an','the','is','are','was','were','be','been','have','has','had',
+        'do','does','did','will','would','could','should','may','might','can',
+        'to','of','in','for','on','with','at','by','from','as','into',
+        'i','my','me','you','your','we','our','it','its',
+        'what','which','who','when','where','why','how','and','or','but',
+    }
+    terms = [w for w in words if len(w) >= 3 and w not in stopwords]
     if not terms:
-        return '""'
-    return " ".join(f'"{t}"' for t in terms)
+        terms = sorted(words, key=len, reverse=True)[:3]
+    if not terms:
+        return chr(34) + chr(34)
+    parts = [chr(34) + t + chr(34) for t in terms[:5]]
+    return " OR ".join(parts)
+

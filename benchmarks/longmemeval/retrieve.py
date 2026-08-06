@@ -37,13 +37,15 @@ Do not make up information.
 """
 
 _ANSWER_PROMPT = """\
-Conversation history retrieved for this question:
+The following are conversation history excerpts. Find the answer to the question.
+
+CONVERSATION HISTORY:
 {context}
 
 ---
-Question: {question}
+QUESTION: {question}
 
-Answer in 1-3 sentences:"""
+Answer in one sentence. If the answer is in the conversation, state it directly. If not present, say: I don't know."""
 
 
 async def retrieve_context(
@@ -58,25 +60,21 @@ async def retrieve_context(
         query=question,
         project_id=project_id,
         user_id=user_id,
-        layers=["episodic", "facts"],
+        layers=["episodic"],   # episodic only — verbatim transcripts
         limit=top_k,
     )
 
     parts: list[str] = []
-    # Episodic results — direct session content
-    for r in results.episodic[:6]:
+    # Episodic results — verbatim session transcripts
+    for r in results.episodic[:top_k]:
         d = r.data
-        # Get transcript excerpt if available
-        transcript = d.get("full_transcript", d.get("summary", ""))
+        # Use full transcript — that's what contains the answers
+        transcript = d.get("full_transcript", "")
+        if not transcript:
+            transcript = d.get("summary", "")
         if transcript:
-            parts.append(f"[Session] {transcript[:500]}")
-
-    # Fact results — structured extracted knowledge
-    for r in results.facts[:4]:
-        d = r.data
-        content = d.get("content", d.get("title", ""))
-        if content:
-            parts.append(f"[Fact] {content[:200]}")
+            # Truncate each transcript to avoid context overflow
+            parts.append(transcript[:3000])
 
     return "\n\n".join(parts) if parts else "No relevant context found."
 
@@ -194,8 +192,10 @@ async def run_retrieval(
                     continue
 
                 try:
+                    # Isolate each question's haystack by using question-specific project_id
+                    q_project_id = f"{project_id}_{q['question_id']}"
                     result = await process_question(
-                        engine, q, project_id, user_id, api_key, model, top_k
+                        engine, q, q_project_id, user_id, api_key, model, top_k
                     )
                     fout.write(json.dumps(result) + "\n")
                     fout.flush()

@@ -1,0 +1,14 @@
+{
+  "overall_accuracy": 17.4,
+  "correct": 8,
+  "total": 46,
+  "mode": "string",
+  "judge_model": "string_match",
+  "by_type": {
+    "single-session-user": {
+      "correct": 8,
+      "total": 46,
+      "accuracy": 17.4
+    }
+  }
+}

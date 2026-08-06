@@ -110,13 +110,18 @@ async def ingest_all(
     start = time.time()
 
     async with MemoryEngine(settings) as engine:
+        # Disable LLM extraction during bulk ingestion for speed.
+        # We store episodes verbatim; retrieval uses semantic search on transcripts.
+        engine._extractor._api_key = ""
         for i, q in enumerate(questions):
             q_id = q["question_id"]
             if q_id in done_ids:
                 continue
 
             t0 = time.time()
-            r = await ingest_question(engine, q, project_id, user_id)
+            # Isolate each question: separate project_id per haystack
+            q_project_id = f"{project_id}_{q['question_id']}"
+            r = await ingest_question(engine, q, q_project_id, user_id)
             elapsed = time.time() - t0
             r["elapsed_s"] = round(elapsed, 2)
             results.append(r)

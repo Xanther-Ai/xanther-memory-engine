@@ -1,0 +1,18 @@
+{
+  "overall_accuracy": 0.0,
+  "total_questions": 50,
+  "correct": 0,
+  "answer_model": "openai/gpt-4o-mini",
+  "judge_mode": "string",
+  "judge_model": "openai/gpt-4o-mini",
+  "top_k_retrieval": 10,
+  "total_elapsed_min": 2.4,
+  "output_dir": "benchmarks/longmemeval/results/run_002",
+  "by_type": {
+    "single-session-user": {
+      "correct": 0,
+      "total": 50,
+      "accuracy": 0.0
+    }
+  }
+}

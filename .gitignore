@@ -19,3 +19,5 @@ venv/
 *.db
 node_modules/
 benchmarks/longmemeval/data/
+benchmarks/longmemeval/results/
+benchmarks/longmemeval/data/
