@@ -18,3 +18,4 @@ venv/
 .xanther/
 *.db
 node_modules/
+benchmarks/longmemeval/data/
