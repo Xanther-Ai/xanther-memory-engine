@@ -400,6 +400,9 @@ _STOPWORDS = frozenset({
 })
 
 def _fts_query(text: str) -> str:
+    """Build FTS5 query using the most distinctive terms (longest/rarest).
+    Longer words are more specific and yield better FTS precision.
+    """
     import re as _re
     words = _re.findall(r"[a-zA-Z0-9]+", text.lower())
     stopwords = {
@@ -408,12 +411,18 @@ def _fts_query(text: str) -> str:
         'to','of','in','for','on','with','at','by','from','as','into',
         'i','my','me','you','your','we','our','it','its',
         'what','which','who','when','where','why','how','and','or','but',
+        # Question-noise words that appear in queries but rarely in answer sessions
+        'checking','previous','chat','remind','wondering','planning','remember',
+        'revisit','mentioned','going','back','again','could','tell','know',
+        'suggest','recommend','asked','said','told','about','this','that',
     }
     terms = [w for w in words if len(w) >= 3 and w not in stopwords]
     if not terms:
         terms = sorted(words, key=len, reverse=True)[:3]
     if not terms:
         return chr(34) + chr(34)
-    parts = [chr(34) + t + chr(34) for t in terms[:5]]
+    # Sort by length desc — longer = more specific/distinctive
+    terms = sorted(set(terms), key=len, reverse=True)
+    parts = [chr(34) + t + chr(34) for t in terms[:6]]
     return " OR ".join(parts)
 

@@ -138,7 +138,7 @@ async def ingest_with_graph(
                             user_id=user_id,
                             attribute=attribute,
                             value=value,
-                            fact_type=attribute.lower().replace(" ", "_")[:40],
+                            fact_type=str(f.get("fact_type") or attribute.lower().replace(" ", "_"))[:40],
                             session_id=session_id,
                             session_date=fdate,
                             embedding=emb,

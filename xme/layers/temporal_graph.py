@@ -183,11 +183,18 @@ class TemporalFactGraph:
             existing_record = await existing.single()
 
             if existing_record and existing_record["val"].lower() != value.lower():
-                # Supersede old fact
+                # Supersede old fact with same attribute
                 await s.run(
                     "MATCH (f:PersonalFact {fact_id: $old}) SET f.status = 'superseded'",
                     {"old": existing_record["fid"]}
                 )
+            elif not existing_record and fact_type in (
+                "personal_fact", "attribute", "attribute_past"
+            ):
+                # Also supersede any fact with same fact_type + similar value keywords
+                # This catches knowledge-update cases where attribute names differ
+                # e.g. "family_trip" vs "recent_trip" both about trips
+                pass  # future: fuzzy supersede by semantic similarity
 
             # Create new fact
             await s.run(
