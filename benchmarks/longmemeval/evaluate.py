@@ -59,7 +59,7 @@ Is the prediction correct? Answer with ONLY "correct" or "incorrect":"""
 
 def normalize(text: str) -> str:
     """Lowercase, remove punctuation, collapse whitespace."""
-    text = text.lower()
+    text = str(text).lower()
     text = re.sub(r"[^\w\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -120,7 +120,7 @@ async def llm_judge(
         )
         resp.raise_for_status()
         verdict = resp.json()["choices"][0]["message"]["content"].strip().lower()
-        return "correct" in verdict
+        return verdict.startswith("correct") and "incorrect" not in verdict
 
 
 # ---------------------------------------------------------------------------

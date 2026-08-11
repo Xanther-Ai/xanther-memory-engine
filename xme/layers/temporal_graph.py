@@ -219,49 +219,65 @@ class TemporalFactGraph:
         embedding: Optional[list[float]] = None,
         top_k: int = 10,
     ) -> list[dict[str, Any]]:
-        """Find relevant personal facts. Uses vector search if embedding available."""
+        """Find relevant personal facts, scoped to (user, project).
+
+        IMPORTANT: We do NOT use the global vector index + post-filter here.
+        A single Neo4j DB holds facts for many projects/tenants; the global
+        index returns the top-k nearest across ALL projects, which then get
+        filtered down to almost nothing for the target project (recall collapse).
+        Instead we load this project's active facts and rank in Python — exact
+        top-k within the tenant. Projects are bounded (~hundreds of facts), so
+        this is fast. For very large tenants, use Neo4j 5.18+ filtered vector
+        search or a per-tenant index.
+        """
         async with self._driver.session() as s:
-            if embedding and any(x != 0.0 for x in embedding):
-                try:
-                    result = await s.run(
-                        """
-                        CALL db.index.vector.queryNodes('pf_embedding_idx', $k, $emb)
-                        YIELD node, score
-                        WHERE node.user_id = $uid AND node.project_id = $pid 
-                          AND node.status = 'active'
-                        RETURN node.attribute AS attr, node.value AS val,
-                               node.fact_type AS ftype, node.session_date AS sdate,
-                               score
-                        ORDER BY score DESC LIMIT $k
-                        """,
-                        {"k": top_k, "emb": embedding, "uid": user_id, "pid": project_id}
-                    )
-                    records = [dict(r) async for r in result]
-                    if records:
-                        return records
-                except Exception as e:
-                    logger.debug("Vector search failed: %s", e)
-
-            # Keyword fallback
-            keywords = [w for w in query.lower().split() if len(w) > 3][:5]
-            where_parts = " OR ".join(
-                f"toLower(f.value) CONTAINS '{k}' OR toLower(f.attribute) CONTAINS '{k}'"
-                for k in keywords
-            )
-            if not where_parts:
-                where_parts = "f.status = 'active'"
-
             result = await s.run(
-                f"""
-                MATCH (f:PersonalFact {{user_id: $uid, project_id: $pid, status: 'active'}})
-                WHERE {where_parts}
-                RETURN f.attribute AS attr, f.value AS val,
-                       f.fact_type AS ftype, f.session_date AS sdate, 1.0 AS score
-                LIMIT $k
+                """
+                MATCH (f:PersonalFact {user_id: $uid, project_id: $pid, status: 'active'})
+                RETURN f.attribute AS attr, f.value AS val, f.fact_type AS ftype,
+                       f.session_date AS sdate, f.embedding AS emb
                 """,
-                {"uid": user_id, "pid": project_id, "k": top_k}
+                {"uid": user_id, "pid": project_id},
             )
-            return [dict(r) async for r in result]
+            rows = [dict(r) async for r in result]
+
+        if not rows:
+            return []
+
+        # Vector ranking within the project
+        if embedding and any(x != 0.0 for x in embedding):
+            import math
+            qv = embedding
+            qnorm = math.sqrt(sum(x * x for x in qv)) + 1e-9
+            scored = []
+            for r in rows:
+                emb = r.get("emb")
+                if emb and len(emb) == len(qv):
+                    dot = sum(a * b for a, b in zip(emb, qv))
+                    vnorm = math.sqrt(sum(a * a for a in emb)) + 1e-9
+                    score = dot / (vnorm * qnorm)
+                else:
+                    score = 0.0
+                scored.append({
+                    "attr": r["attr"], "val": r["val"], "ftype": r["ftype"],
+                    "sdate": r["sdate"], "score": float(score),
+                })
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            return scored[:top_k]
+
+        # Keyword fallback (no embedding available)
+        keywords = [w for w in query.lower().split() if len(w) > 3][:6]
+        out = []
+        for r in rows:
+            hay = f"{r['attr']} {r['val']}".lower()
+            hits = sum(1 for k in keywords if k in hay)
+            if hits:
+                out.append({
+                    "attr": r["attr"], "val": r["val"], "ftype": r["ftype"],
+                    "sdate": r["sdate"], "score": float(hits),
+                })
+        out.sort(key=lambda x: x["score"], reverse=True)
+        return out[:top_k]
 
     async def get_all_facts(
         self, user_id: str, project_id: str

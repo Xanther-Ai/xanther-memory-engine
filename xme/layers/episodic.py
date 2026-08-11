@@ -222,7 +222,7 @@ class EpisodicStore:
               AND f.project_id = ?
             """
             params: list[Any] = [_fts_query(query), project_id]
-            q += f" LIMIT {limit}"
+            q += f" ORDER BY bm25(xme_episodes_fts) LIMIT {limit}"
             rows = self._conn.execute(q, params).fetchall()
         except sqlite3.OperationalError as fts_err:
             # FTS not populated yet — fall back to LIKE on data column

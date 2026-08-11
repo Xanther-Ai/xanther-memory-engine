@@ -6,7 +6,7 @@
   "judge_mode": "string",
   "judge_model": "openai/gpt-4o-mini",
   "top_k_retrieval": 10,
-  "total_elapsed_min": 9.1,
+  "total_elapsed_min": 785.2,
   "output_dir": "benchmarks/longmemeval/results/run_001",
   "by_type": {
     "single-session-user": {
