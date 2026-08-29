@@ -6,7 +6,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
-[![PyPI](https://img.shields.io/pypi/v/xanther-memory-engine)](https://pypi.org/project/xanther-memory-engine)
+[![PyPI](https://img.shields.io/pypi/v/xanther-xme)](https://pypi.org/project/xanther-xme)
 
 </div>
 
@@ -17,7 +17,7 @@
 XME gives AI coding assistants **persistent memory** across sessions. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
 
 ```bash
-pip install xanther-memory-engine
+pip install xanther-xme
 xme hook install .      # 30 seconds — auto-captures every session
 xme start my-project    # memory starts now
 ```
@@ -212,7 +212,7 @@ flowchart LR
 ## Quickstart
 
 ```bash
-pip install xanther-memory-engine
+pip install xanther-xme
 xme hook install .
 xme start my-project
 ```
