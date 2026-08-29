@@ -22,6 +22,13 @@ xme hook install .      # 30 seconds — auto-captures every session
 xme start my-project    # memory starts now
 ```
 
+> **Want code intelligence too?** Install XME bundled with the [Xanther Context Engine (XCE)](https://github.com/Xanther-Ai/xanther-context-engine) in one command:
+> ```bash
+> pip install "xanther-xce[all]"        # XCE + XME together
+> # or run instantly, no install:
+> uvx --from "xanther-xce[all]" xanther --help
+> ```
+
 ---
 
 ## Architecture
