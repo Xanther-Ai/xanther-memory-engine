@@ -209,25 +209,104 @@ flowchart LR
 
 ---
 
-## Quickstart
+## Getting Started
+
+### 1. Install
 
 ```bash
 pip install xanther-xme
-xme hook install .
-xme start my-project
+
+# Or bundled with the Xanther Context Engine (code graph + memory):
+pip install "xanther-xce[all]"
+# Run instantly without installing:
+uvx --from "xanther-xce[all]" xanther --help
 ```
 
-**With full infrastructure** (Neo4j + OpenSearch):
-```bash
-cp .env.example .env        # set NEO4J_PASSWORD
-docker-compose up -d
-xme start my-project
-```
+### 2. Choose an infrastructure mode
 
-**Zero infrastructure** (SQLite only, no Docker):
+XME works with or without Docker. Pick one:
+
+**Zero infrastructure** — SQLite only, no Docker, works offline:
 ```bash
 XME_FALLBACK_MODE=true xme start my-project
 ```
+
+**Full infrastructure** — Neo4j (fact graph) + OpenSearch (episodic search):
+```bash
+cp .env.example .env        # set NEO4J_PASSWORD (and OPENROUTER_API_KEY for LLM extraction)
+docker-compose up -d        # starts Neo4j (:7687) + OpenSearch (:9200)
+xme start my-project
+```
+
+> No OpenRouter key? Fact extraction falls back to regex heuristics — everything still works,
+> just with slightly coarser facts.
+
+### 3. Install the auto-capture hooks
+
+This is the step that makes memory automatic. Hooks capture every agent turn and persist a
+session when the agent stops — no manual recording needed.
+
+```bash
+# Install Kiro + Claude Code hooks into a repo (defaults to current dir)
+xme hook install .
+
+# Preview what would be written without changing anything
+xme hook install . --dry-run
+
+# Remove the hooks later
+xme hook uninstall .
+```
+
+**What gets installed:**
+
+| Hook | IDE event | What it does |
+|------|-----------|--------------|
+| `xme-record-turn` | `promptSubmit` | Buffers each user turn to `.xanther/turns/` (<5ms, non-blocking) |
+| `xme-record-tool` | `postToolUse` | Buffers tool calls to the same journal |
+| `xme-session-end` | `agentStop` / `Stop` | Drains the buffer → extracts facts → updates context → saves the session |
+
+The installer writes IDE-native config:
+- **Kiro** → hook files under `.kiro/hooks/`
+- **Claude Code** → hook entries in the project's Claude settings
+
+### 4. Wire up the MCP server (optional but recommended)
+
+So your agent can query and prime memory directly, add XME as an MCP server:
+
+```json
+{
+  "mcpServers": {
+    "xme": {
+      "command": "xme",
+      "args": ["serve"],
+      "env": { "NEO4J_PASSWORD": "your-password" }
+    }
+  }
+}
+```
+
+At the start of a session the agent calls `xme_session_start` to get a **primed context block**
+(current task, recent decisions, known-failed approaches) injected into its prompt.
+
+### 5. Verify it's working
+
+```bash
+xme stats my-project      # memory health: fact / episode / context counts
+xme dashboard             # visual timeline at http://localhost:8001
+```
+
+After a session or two, `xme stats` should show growing fact and episode counts. If they stay at
+zero, see **Troubleshooting hooks** below.
+
+### Troubleshooting hooks
+
+- **Nothing captured?** Confirm hooks installed: check `.kiro/hooks/` (Kiro) or your Claude Code
+  settings. Re-run `xme hook install . --dry-run` to see expected paths.
+- **Buffer never drains?** Facts are extracted on `agentStop` or on the next `xme start` /
+  `xme_session_end` MCP call. Run `xme start my-project` to force a drain.
+- **Neo4j errors?** You can run fully local with `XME_FALLBACK_MODE=true` (SQLite only).
+- **Buffer files** live in `.xanther/turns/`; the warm store is `.xanther/xme.db`. Both are safe
+  to inspect. Add `.xanther/` to your `.gitignore` (memory is per-developer runtime state).
 
 ---
 
