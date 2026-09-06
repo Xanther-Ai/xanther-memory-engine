@@ -2,19 +2,31 @@
 
 # Xanther Memory Engine (XME)
 
-**Persistent memory for AI coding assistants.**
+### Your AI assistant never forgets again.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![PyPI](https://img.shields.io/pypi/v/xanther-xme)](https://pypi.org/project/xanther-xme)
+![MCP Server](https://img.shields.io/badge/MCP-server-purple)
+![Local-first](https://img.shields.io/badge/local--first-no%20cloud%20required-brightgreen)
+
+🌐 [xanther.ai](https://xanther.ai) &nbsp;·&nbsp; [Docs](https://xanther.ai) &nbsp;·&nbsp; [XCE — Context Engine](https://github.com/Xanther-Ai/xanther-context-engine)
 
 </div>
 
 ---
 
-> Your AI assistant forgets every decision you've made. It repeats the same failed approaches. It re-explains your stack every session. XME fixes this.
+> Your AI assistant forgets every decision you've made. It repeats the same failed approaches and re-explains your stack every session. XME gives it persistent memory across sessions — so progress compounds instead of resetting.
 
-XME gives AI coding assistants **persistent memory** across sessions. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
+Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
+
+- **Cross-session recall.** Pick up a multi-day refactor exactly where you left off.
+- **Three memory layers.** Episodic transcripts, an extracted fact graph, and live working context.
+- **Automatic capture.** IDE hooks record every turn and persist a session on stop — no manual notes.
+- **Deduplication.** Facts are stored once and merged on similarity, not repeated across sessions.
+- **Semantic + full-text search.** Find past decisions and sessions by meaning or keyword.
+- **MCP-native.** 11 tools any agent can call to query and prime memory.
+- **Local-first.** SQLite-only mode needs no Docker; scale up to Neo4j + OpenSearch when you want.
 
 ```bash
 pip install xanther-xme
@@ -28,6 +40,54 @@ xme start my-project    # memory starts now
 > # or run instantly, no install:
 > uvx --from "xanther-xce[all]" xanther --help
 > ```
+
+---
+
+## Why XME
+
+Most LLM sessions are ephemeral. The agent solves a problem, then forgets it. The usual workarounds fall short:
+
+- **Chat history** captures conversations but isn't structured or searchable knowledge.
+- **Bigger context windows** still reset every session and cost tokens to refill.
+- **Built-in agent memory** is small, vendor-owned, and usually invisible — gone if you switch tools.
+- **RAG / vector DBs** need infra and usually live in someone else's cloud.
+
+XME takes a simpler path: **three memory layers you own, on your machine, queryable over MCP.**
+
+- Verbatim episodes so you can audit exactly what happened.
+- An extracted fact graph (decisions, attempts, preferences) with vector dedup.
+- Live working context that's always current, injected at the start of each session.
+- Facts link to the code they affect when [XCE](https://github.com/Xanther-Ai/xanther-context-engine) is installed alongside.
+
+---
+
+## How it works
+
+You are mid-refactor and the agent tried a Redis distributed lock last week that timed out under load. Without memory, it suggests the same thing again. With XME:
+
+**1. Capture (automatic).** As you work, an IDE hook buffers every turn to `.xanther/turns/` in under 5ms. Nothing blocks.
+
+**2. Persist on stop.** When the agent stops, XME drains the buffer, extracts facts, and updates working context:
+
+```
+[ATTEMPT · FAILED] Redis distributed lock — timeout under high load
+[DECISION · VALIDATED] Use FastAPI — async support required
+Current task: Refactor auth module
+```
+
+**3. Prime the next session.** On `xme_session_start`, the agent gets a context block injected into its prompt:
+
+```
+Current task: Refactor auth module
+Known failed approaches:
+  - Redis distributed lock — timeout under high load
+Recent decisions:
+  - [VALIDATED] Use FastAPI — async support required
+```
+
+**4. No repeated mistakes.** The agent sees the failed Redis attempt and proposes something else — building on history instead of relearning it.
+
+The files stay yours (`.xanther/xme.db`, plus optional Neo4j/OpenSearch), inspectable and local.
 
 ---
 
@@ -271,7 +331,39 @@ The installer writes IDE-native config:
 
 ### 4. Wire up the MCP server (optional but recommended)
 
-So your agent can query and prime memory directly, add XME as an MCP server:
+So your agent can query and prime memory directly, add XME as an MCP server. Pick your client:
+
+<details>
+<summary><b>Kiro</b></summary>
+
+Add to `~/.kiro/settings/mcp.json` (global) or `.kiro/settings/mcp.json` (workspace):
+
+```json
+{
+  "mcpServers": {
+    "xme": {
+      "command": "xme",
+      "args": ["serve"],
+      "env": { "NEO4J_PASSWORD": "your-password" },
+      "autoApprove": ["xme_session_start", "xme_search", "xme_get_context"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add xme -- xme serve
+```
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 
 ```json
 {
@@ -284,6 +376,33 @@ So your agent can query and prime memory directly, add XME as an MCP server:
   }
 }
 ```
+</details>
+
+<details>
+<summary><b>VS Code</b></summary>
+
+Add to your User Settings (JSON):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "xme": {
+        "command": "xme",
+        "args": ["serve"],
+        "env": { "NEO4J_PASSWORD": "your-password" }
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Anything MCP</b></summary>
+
+If your client speaks MCP over stdio, point it at the `xme serve` command above. The tool names and behavior are identical across clients.
+</details>
 
 At the start of a session the agent calls `xme_session_start` to get a **primed context block**
 (current task, recent decisions, known-failed approaches) injected into its prompt.
