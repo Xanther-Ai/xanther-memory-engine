@@ -1,20 +1,43 @@
+<h1 align="center" style="border-bottom: none">
+    <div>
+        <a href="https://xanther.ai"><picture>
+            <img alt="Xanther Memory Engine (XME)" src="docs/images/xme-banner.png" width="220" />
+        </picture></a>
+        <br>
+        Xanther Memory Engine (XME): Open-Source, Local-First Memory for AI Coding Agents
+    </div>
+</h1>
+
+<p align="center">
+<b>XME gives AI coding assistants persistent, cross-session memory — decisions, attempts, and working context that survive across sessions.</b> Apache-2.0 licensed, local-first, and free to self-host. Works with Claude Code, Cursor, Kiro, Codex, and any MCP-compatible tool.
+</p>
+
 <div align="center">
 
-# Xanther Memory Engine (XME)
-
-**Persistent memory for AI coding assistants.**
-
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![PyPI](https://img.shields.io/pypi/v/xanther-xme)](https://pypi.org/project/xanther-xme)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
+![MCP Server](https://img.shields.io/badge/MCP-server-purple)
+![Local-first](https://img.shields.io/badge/local--first-no%20cloud%20required-brightgreen)
 
 </div>
 
----
+<p align="center">
+    <a href="https://xanther.ai"><b>Website</b></a> •
+    <a href="https://discord.com/invite/p27qtGkTYw"><b>Discord</b></a> •
+    <a href="https://github.com/Xanther-Ai/xanther-context-engine"><b>XCE — Context Engine</b></a> •
+    <a href="https://xanther.ai"><b>Documentation</b></a>
+</p>
 
-> Your AI assistant forgets every decision you've made. It repeats the same failed approaches. It re-explains your stack every session. XME fixes this.
+<div align="center" style="margin-top: 1em; margin-bottom: 1em;">
+<a href="#-why-xme">🚀 Why XME</a> • <a href="#-getting-started">⚡ Quick Start</a> • <a href="#-how-it-works">🔧 How It Works</a> • <a href="#-mcp-tools-11">🧰 MCP Tools</a> • <a href="#-how-it-compares">📊 How It Compares</a> • <a href="#-star-us-on-github">⭐ Star Us</a>
+</div>
 
-XME gives AI coding assistants **persistent memory** across sessions. Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
+<br>
+
+[![Xanther Memory Engine — session memory dashboard](docs/images/xme-banner.png)](https://xanther.ai)
+
+<br>
 
 ```bash
 pip install xanther-xme
@@ -28,6 +51,56 @@ xme start my-project    # memory starts now
 > # or run instantly, no install:
 > uvx --from "xanther-xce[all]" xanther --help
 > ```
+
+---
+
+<a id="-why-xme"></a>
+## 🚀 Why XME
+
+Most LLM sessions are ephemeral. The agent solves a problem, then forgets it. The usual workarounds fall short:
+
+- **Chat history** captures conversations but isn't structured or searchable knowledge.
+- **Bigger context windows** still reset every session and cost tokens to refill.
+- **Built-in agent memory** is small, vendor-owned, and usually invisible — gone if you switch tools.
+- **RAG / vector DBs** need infra and usually live in someone else's cloud.
+
+XME takes a simpler path: **three memory layers you own, on your machine, queryable over MCP.**
+
+- Verbatim episodes so you can audit exactly what happened.
+- An extracted fact graph (decisions, attempts, preferences) with vector dedup.
+- Live working context that's always current, injected at the start of each session.
+- Facts link to the code they affect when [XCE](https://github.com/Xanther-Ai/xanther-context-engine) is installed alongside.
+
+---
+
+<a id="-how-it-works"></a>
+## 🔧 How it works
+
+You are mid-refactor and the agent tried a Redis distributed lock last week that timed out under load. Without memory, it suggests the same thing again. With XME:
+
+**1. Capture (automatic).** As you work, an IDE hook buffers every turn to `.xanther/turns/` in under 5ms. Nothing blocks.
+
+**2. Persist on stop.** When the agent stops, XME drains the buffer, extracts facts, and updates working context:
+
+```
+[ATTEMPT · FAILED] Redis distributed lock — timeout under high load
+[DECISION · VALIDATED] Use FastAPI — async support required
+Current task: Refactor auth module
+```
+
+**3. Prime the next session.** On `xme_session_start`, the agent gets a context block injected into its prompt:
+
+```
+Current task: Refactor auth module
+Known failed approaches:
+  - Redis distributed lock — timeout under high load
+Recent decisions:
+  - [VALIDATED] Use FastAPI — async support required
+```
+
+**4. No repeated mistakes.** The agent sees the failed Redis attempt and proposes something else — building on history instead of relearning it.
+
+The files stay yours (`.xanther/xme.db`, plus optional Neo4j/OpenSearch), inspectable and local.
 
 ---
 
@@ -209,7 +282,8 @@ flowchart LR
 
 ---
 
-## Getting Started
+<a id="-getting-started"></a>
+## ⚡ Getting Started
 
 ### 1. Install
 
@@ -271,7 +345,39 @@ The installer writes IDE-native config:
 
 ### 4. Wire up the MCP server (optional but recommended)
 
-So your agent can query and prime memory directly, add XME as an MCP server:
+So your agent can query and prime memory directly, add XME as an MCP server. Pick your client:
+
+<details>
+<summary><b>Kiro</b></summary>
+
+Add to `~/.kiro/settings/mcp.json` (global) or `.kiro/settings/mcp.json` (workspace):
+
+```json
+{
+  "mcpServers": {
+    "xme": {
+      "command": "xme",
+      "args": ["serve"],
+      "env": { "NEO4J_PASSWORD": "your-password" },
+      "autoApprove": ["xme_session_start", "xme_search", "xme_get_context"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add xme -- xme serve
+```
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 
 ```json
 {
@@ -284,6 +390,33 @@ So your agent can query and prime memory directly, add XME as an MCP server:
   }
 }
 ```
+</details>
+
+<details>
+<summary><b>VS Code</b></summary>
+
+Add to your User Settings (JSON):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "xme": {
+        "command": "xme",
+        "args": ["serve"],
+        "env": { "NEO4J_PASSWORD": "your-password" }
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Anything MCP</b></summary>
+
+If your client speaks MCP over stdio, point it at the `xme serve` command above. The tool names and behavior are identical across clients.
+</details>
 
 At the start of a session the agent calls `xme_session_start` to get a **primed context block**
 (current task, recent decisions, known-failed approaches) injected into its prompt.
@@ -331,7 +464,8 @@ After `xme hook install .`:
 
 ---
 
-## MCP tools (11)
+<a id="-mcp-tools-11"></a>
+## 🧰 MCP tools (11)
 
 | Tool | Description |
 |------|-------------|
@@ -380,7 +514,8 @@ flowchart TD
 
 ---
 
-## Comparison
+<a id="-how-it-compares"></a>
+## 📊 How It Compares
 
 | | Mem0 | Zep | MemPalace | **XME** |
 |--|------|-----|-----------|---------|
@@ -444,6 +579,12 @@ pip install "xanther-context-engine[memory]"  # XCE + XME together
 ```
 
 ---
+
+<a id="-star-us-on-github"></a>
+## ⭐ Star Us on GitHub
+
+If XME saves your agent from relearning your codebase every session, a star helps other developers find it and helps us keep building in the open.
+
 
 ## License
 
