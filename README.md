@@ -1,7 +1,7 @@
 <h1 align="center" style="border-bottom: none">
     <div>
         <a href="https://xanther.ai"><picture>
-            <img alt="Xanther Memory Engine (XME)" src="docs/images/xme-banner.png" width="220" />
+            <img alt="Xanther Memory Engine (XME)" src="docs/images/xme-logo.png" width="320" />
         </picture></a>
         <br>
         Xanther Memory Engine (XME): Open-Source, Local-First Memory for AI Coding Agents
@@ -32,12 +32,6 @@
 <div align="center" style="margin-top: 1em; margin-bottom: 1em;">
 <a href="#-why-xme">🚀 Why XME</a> • <a href="#-getting-started">⚡ Quick Start</a> • <a href="#-how-it-works">🔧 How It Works</a> • <a href="#-mcp-tools-11">🧰 MCP Tools</a> • <a href="#-how-it-compares">📊 How It Compares</a> • <a href="#-star-us-on-github">⭐ Star Us</a>
 </div>
-
-<br>
-
-[![Xanther Memory Engine — session memory dashboard](docs/images/xme-banner.png)](https://xanther.ai)
-
-<br>
 
 ```bash
 pip install xanther-xme
