@@ -1,32 +1,43 @@
+<h1 align="center" style="border-bottom: none">
+    <div>
+        <a href="https://xanther.ai"><picture>
+            <img alt="Xanther Memory Engine (XME)" src="docs/images/xme-banner.png" width="220" />
+        </picture></a>
+        <br>
+        Xanther Memory Engine (XME): Open-Source, Local-First Memory for AI Coding Agents
+    </div>
+</h1>
+
+<p align="center">
+<b>XME gives AI coding assistants persistent, cross-session memory — decisions, attempts, and working context that survive across sessions.</b> Apache-2.0 licensed, local-first, and free to self-host. Works with Claude Code, Cursor, Kiro, Codex, and any MCP-compatible tool.
+</p>
+
 <div align="center">
 
-# Xanther Memory Engine (XME)
-
-### Your AI assistant never forgets again.
-
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![PyPI](https://img.shields.io/pypi/v/xanther-xme)](https://pypi.org/project/xanther-xme)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 ![MCP Server](https://img.shields.io/badge/MCP-server-purple)
 ![Local-first](https://img.shields.io/badge/local--first-no%20cloud%20required-brightgreen)
 
-🌐 [xanther.ai](https://xanther.ai) &nbsp;·&nbsp; [Docs](https://xanther.ai) &nbsp;·&nbsp; [XCE — Context Engine](https://github.com/Xanther-Ai/xanther-context-engine)
-
 </div>
 
----
+<p align="center">
+    <a href="https://xanther.ai"><b>Website</b></a> •
+    <a href="https://discord.com/invite/p27qtGkTYw"><b>Discord</b></a> •
+    <a href="https://github.com/Xanther-Ai/xanther-context-engine"><b>XCE — Context Engine</b></a> •
+    <a href="https://xanther.ai"><b>Documentation</b></a>
+</p>
 
-> Your AI assistant forgets every decision you've made. It repeats the same failed approaches and re-explains your stack every session. XME gives it persistent memory across sessions — so progress compounds instead of resetting.
+<div align="center" style="margin-top: 1em; margin-bottom: 1em;">
+<a href="#-why-xme">🚀 Why XME</a> • <a href="#-getting-started">⚡ Quick Start</a> • <a href="#-how-it-works">🔧 How It Works</a> • <a href="#-mcp-tools-11">🧰 MCP Tools</a> • <a href="#-how-it-compares">📊 How It Compares</a> • <a href="#-star-us-on-github">⭐ Star Us</a>
+</div>
 
-Works with Claude Code, Kiro, Cursor, Codex, and any MCP-compatible tool. No cloud required.
+<br>
 
-- **Cross-session recall.** Pick up a multi-day refactor exactly where you left off.
-- **Three memory layers.** Episodic transcripts, an extracted fact graph, and live working context.
-- **Automatic capture.** IDE hooks record every turn and persist a session on stop — no manual notes.
-- **Deduplication.** Facts are stored once and merged on similarity, not repeated across sessions.
-- **Semantic + full-text search.** Find past decisions and sessions by meaning or keyword.
-- **MCP-native.** 11 tools any agent can call to query and prime memory.
-- **Local-first.** SQLite-only mode needs no Docker; scale up to Neo4j + OpenSearch when you want.
+[![Xanther Memory Engine — session memory dashboard](docs/images/xme-banner.png)](https://xanther.ai)
+
+<br>
 
 ```bash
 pip install xanther-xme
@@ -43,7 +54,8 @@ xme start my-project    # memory starts now
 
 ---
 
-## Why XME
+<a id="-why-xme"></a>
+## 🚀 Why XME
 
 Most LLM sessions are ephemeral. The agent solves a problem, then forgets it. The usual workarounds fall short:
 
@@ -61,7 +73,8 @@ XME takes a simpler path: **three memory layers you own, on your machine, querya
 
 ---
 
-## How it works
+<a id="-how-it-works"></a>
+## 🔧 How it works
 
 You are mid-refactor and the agent tried a Redis distributed lock last week that timed out under load. Without memory, it suggests the same thing again. With XME:
 
@@ -269,7 +282,8 @@ flowchart LR
 
 ---
 
-## Getting Started
+<a id="-getting-started"></a>
+## ⚡ Getting Started
 
 ### 1. Install
 
@@ -450,7 +464,8 @@ After `xme hook install .`:
 
 ---
 
-## MCP tools (11)
+<a id="-mcp-tools-11"></a>
+## 🧰 MCP tools (11)
 
 | Tool | Description |
 |------|-------------|
@@ -499,7 +514,8 @@ flowchart TD
 
 ---
 
-## Comparison
+<a id="-how-it-compares"></a>
+## 📊 How It Compares
 
 | | Mem0 | Zep | MemPalace | **XME** |
 |--|------|-----|-----------|---------|
@@ -563,6 +579,12 @@ pip install "xanther-context-engine[memory]"  # XCE + XME together
 ```
 
 ---
+
+<a id="-star-us-on-github"></a>
+## ⭐ Star Us on GitHub
+
+If XME saves your agent from relearning your codebase every session, a star helps other developers find it and helps us keep building in the open.
+
 
 ## License
 
