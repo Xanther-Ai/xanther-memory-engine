@@ -33,6 +33,12 @@
 <a href="#-why-xme">🚀 Why XME</a> • <a href="#-getting-started">⚡ Quick Start</a> • <a href="#-how-it-works">🔧 How It Works</a> • <a href="#-mcp-tools-11">🧰 MCP Tools</a> • <a href="#-how-it-compares">📊 How It Compares</a> • <a href="#-star-us-on-github">⭐ Star Us</a>
 </div>
 
+<br>
+
+[![Xanther Memory Engine — session memory dashboard](docs/images/xme-banner.png)](https://xanther.ai)
+
+<br>
+
 ```bash
 pip install xanther-xme
 xme hook install .      # 30 seconds — auto-captures every session
